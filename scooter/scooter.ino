@@ -4,11 +4,12 @@
 #include <EEPROM.h>
 
 
-LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); // Ustawienie adresu ukladu na 0x27
+LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); //sets lcd address to 0x27
 DS3231 rtc(SDA, SCL);
 float totalDist = 0;
 
-byte battery[] = {//byte(0), custom lcd char
+//custom lcd chars
+byte battery[] = {//battery icon
 	B01110,
 	B11111,
 	B10001,
@@ -17,7 +18,7 @@ byte battery[] = {//byte(0), custom lcd char
 	B11111,
 	B11111,
 	B11111 };
-byte perH[] = {
+byte perH[] = {// per hour char(to fit it on one lcd segment
 	B00010,
 	B00100,
 	B01000,
@@ -27,7 +28,7 @@ byte perH[] = {
 	B01001,
 	B01001 };
 
-byte degree[] = {
+byte degree[] = {//degree symbol
   B11000,
   B11011,
   B00100,
@@ -38,30 +39,49 @@ byte degree[] = {
   B00011
 };
 
-float getRealV(unsigned long nowtime);
+
+
+// prints info on lcd, depends on current page
 void printLCD(const int& page, const int& power, const float& realV, const float& mVolt, const float& lVolt, const float& tempDist, const float& totalDist, const float& tempB);
-void switchP(int& page, const unsigned long& nowtime);
+
+//gets main battery, and logic battery voltages
 void getVoltages(float& mainV, float& logicV);
+
+//controls motor power, braking and relay(for energy retrieving)
 void motorCtrl(const int speed);
+
+//makes speed changes smooth
 void optSpeed(const int& decS, int& actS);
+
+//calculates current motor power, and prepares to show it on lcd
 int calcPower(int speed);
+
+//reads battery temperature
 float kty(unsigned int port);
 
-#define POTP 2
-#define MOTORP 5
-#define RELAYP 4
-#define HALLP 0
-#define RBUTTON 6
-#define MBUTTON 7
-#define LBUTTON 8
-#define BRAKEP 9
-#define REFRESH 300
-#define MTIME 5000 //milisec
-#define S_MARGIN 10
-#define DEBUG
+// reads control buttons states - switches page displayed on lcd, changes lcd backlight state  
+void switchP(int& page, const unsigned long& nowtime);
+
+//speedometer, based on hall sensor
+float getRealV(unsigned long nowtime);
+
+//pin configuration, constants
+#define POTP 2 //speed regulator
+#define MOTORP 5 //motor(pwm controler)
+#define RELAYP 4 //relay pin
+#define HALLP 0 //hall sensor pin - for speed meter
+#define RBUTTON 6 //right button
+#define MBUTTON 7 //middle button
+#define LBUTTON 8 //left button
+#define BRAKEP 9 //brake button
+#define REFRESH 300 //lcd refresh time in milisec
+#define MTIME 5000 //real speed refresh time in milisec
+#define S_MARGIN 10//speed change margin, for smooth changing
+//#define DEBUG
 
 void setup()
 {
+  //pin setup
 	pinMode(RBUTTON, INPUT);
 	pinMode(MBUTTON, INPUT);
 	pinMode(LBUTTON, INPUT);
@@ -70,23 +90,29 @@ void setup()
 	digitalWrite(MOTORP, HIGH);
 	pinMode(RELAYP, OUTPUT);
 	digitalWrite(RELAYP, LOW); // no connection
+ 
 	Serial.begin(9600);
+
+  //i2c devices initialization
 	rtc.begin(); // Initialize the rtc object
-	//rtc.setTime(20, 51, 20);     // Set the time to 12:00:00 (24hr format)
+	//rtc.setTime(20, 51, 20);     // sets time
 	lcd.begin(16, 2);
 	lcd.createChar(0, battery);
 	lcd.createChar(1, perH);
 	lcd.createChar(2, degree);
 	lcd.backlight(); // backlight on
 	lcd.setCursor(2, 0);
-	lcd.print("CACTUSOFT");
+	lcd.print("CACTUSOFT");//non-existing company - looks more profesional :) 
 	lcd.setCursor(2, 1);
 	lcd.print("ENTERTAINMENT");
+ //gets total distance from EEPROM
 	EEPROM.get(0, totalDist);
 	Serial.println(totalDist);
 	delay(2000);
 }
 
+
+//main loop
 void loop()
 {
 	static int page = 1;
@@ -101,15 +127,19 @@ void loop()
 	static float logicVolt = 0;
 	static unsigned long refreshT = 0;
 
-	int val = analogRead(POTP);          // read the value from the sensor
+	int val = analogRead(POTP);          // read the value from potentiometer - desired speed
 	//Serial.println(val);
+  
+  //desired speed optimization to remove some read errors 
 	if (val < 680)
-		val = 680;
+		  val = 680;
+
 	sspeed += map(val, 680, 1023, 0, 255); // 255- stay, sum of declared speeds
 	countspeed++;
 
+  //some speed optimatimizations to provide speed smooth changes and soft start 
 	if (countspeed > 100)
-	{                                   // average declared speed
+	{                                   
 		decSpeed = sspeed / countspeed; //average
 		optSpeed(decSpeed, speed);
 		power = calcPower(speed);
@@ -123,6 +153,7 @@ void loop()
 	float realV = getRealV(nowtime);
 	getVoltages(mainVolt, logicVolt);
 
+  //lcd refresh - few times per second is enough(it takes quite a lot power) 
 	if (nowtime - refreshT >= REFRESH)
 	{
 		float bTemp = kty(1);
@@ -132,8 +163,10 @@ void loop()
 		printLCD(page, power, realV, mainVolt, logicVolt, tempDist, totalDist, bTemp);
 		refreshT = nowtime;
 	}
+ 
+  //saves total distance to eeprom
 	static unsigned long lastTime = 0;
-	if (nowtime - lastTime > 5000)//save total distance to eeprom
+	if (nowtime - lastTime > 5000)
 	{
 		EEPROM.put(0, totalDist);
 		lastTime = nowtime;
@@ -157,7 +190,7 @@ void loop()
 }
 
 
-float kty(unsigned int port) {// odczyt temp baterii
+float kty(unsigned int port) {
 	float temp = 82;
 	ADCSRA = 0x00;
 	ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
@@ -176,6 +209,7 @@ float kty(unsigned int port) {// odczyt temp baterii
 	temp -= 156;
 	return (temp);
 }
+
 void optSpeed(const int& decS, int& actS)
 {
 	if (decS - actS > S_MARGIN) //increase
@@ -185,6 +219,8 @@ void optSpeed(const int& decS, int& actS)
 	else
 		actS = decS;
 }
+
+
 void motorCtrl(const int speed)
 {
 	bool brake = digitalRead(BRAKEP);
@@ -220,7 +256,7 @@ void motorCtrl(const int speed)
 	//Serial.println(state);
 }
 
-int calcPower(int speed) // zadeklarowana moc na wysw w %
+int calcPower(int speed) 
 {
 	static bool toClear1 = true;
 	static bool toClear2 = true;
@@ -271,7 +307,7 @@ void getVoltages(float& mainV, float& logicV)
 	}
 }
 
-float getRealV(unsigned long nowtime) // odczyt z szybkosciomierza
+float getRealV(unsigned long nowtime)
 {
 	static float Speed = 0;
 	static unsigned int counthall = 0;
@@ -379,9 +415,11 @@ void switchP(int& page, const unsigned long& nowtime)
 
 /*
 TODO
-�adowanie hardware
-tryby
-ostrzezenia
-obudowa, oswietlenie
-komentarze
+modes
+charging hardware
+warnings
+case
+lights
+phisical brake
+drive improvment
 */
