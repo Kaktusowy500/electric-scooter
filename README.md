@@ -15,12 +15,13 @@ The project of a homemade electric scooter was made just for fun and learn. It c
 
 ## Photos and video
 Sample photos of project:
-<img src="images/img1.jpg" width = 800>
-<img src="images/img2.jpg" width = 800>
+
+<img src="images/img1.jpg" width = 700>
+<img src="images/img2.jpg" width = 700>
 
 Video from the first ride, sorry for quality, it was made really spontaneously.
 
-[<img src="images/yt_thumbnail.jpg" width = 800>](http://www.youtube.com/watch?v=bLsYG901Pvs "Homemade electric scooter - first ride")
+[<img src="images/yt_thumbnail.jpg" width = 700>](http://www.youtube.com/watch?v=bLsYG901Pvs "Homemade electric scooter - first ride")
 
 ## Features
 Key features of the onboard computer:
